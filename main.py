@@ -11,7 +11,7 @@ st.set_page_config(page_title="AI Financial Analysis Agent", layout="wide")
 
 # Set your OpenAI API key.
 # For local testing, you can set your API key here. For deployment on Streamlit Cloud, use secrets management.
-openai.api_key = st.secrets.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY_HERE")  # Replace with your API key if testing locally
+openai.api_key = st.secrets.get("OPENAI_API_KEY", "YAIzaSyB6Evv1kEmmQRCRNgd3rpLWo5NGFwektwk")  # Replace with your API key if testing locally
 
 st.title("AI Financial Analysis Agent")
 st.write("Upload a financial document (PDF, Excel, Word, or CSV) to get started.")
