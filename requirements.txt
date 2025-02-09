@@ -3,5 +3,5 @@ pandas
 openpyxl
 python-docx
 PyPDF2
-openai
 matplotlib
+requests
