@@ -1,28 +1,28 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import openai
 import PyPDF2
 import docx
+import requests
 import io
 
-# === Configuration ===
-st.set_page_config(page_title="AI Financial Analysis Agent", layout="wide")
+# === App Configuration ===
+st.set_page_config(page_title="Google API Financial Analysis Agent", layout="wide")
 
-# Set your OpenAI API key.
-# For local testing, you can set your API key here. For deployment on Streamlit Cloud, use secrets management.
-openai.api_key = st.secrets.get("OPENAI_API_KEY", "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")  # Replace with your API key if testing locally
+# Set your Google API key (for Cloud Natural Language API)
+# Warning: Hardcoding API keys is not secure. Use secrets or environment variables in production.
+GOOGLE_API_KEY = "AIzaSyBPwz9vY4BX4pmTLEx28dNiAQfi7sabXE"
 
-st.title("AI Financial Analysis Agent")
+st.title("Google API Financial Analysis Agent")
 st.write("Upload a financial document (PDF, Excel, Word, or CSV) to get started.")
 
-# === File Upload ===
+# === File Upload Section ===
 uploaded_file = st.file_uploader("Upload your financial document", type=["pdf", "xlsx", "xls", "docx", "doc", "csv"])
 
 if uploaded_file is not None:
     file_type = uploaded_file.name.split('.')[-1].lower()
     extracted_text = ""
-    df = None  # This will hold tabular data if available
+    df = None  # For tabular data if available
 
     # --- Process PDF Files ---
     if file_type == 'pdf':
@@ -45,7 +45,6 @@ if uploaded_file is not None:
     elif file_type in ['xlsx', 'xls']:
         try:
             df = pd.read_excel(uploaded_file)
-            # Convert the DataFrame to CSV text for display and analysis
             extracted_text = df.to_csv(index=False)
         except Exception as e:
             st.error(f"Error reading Excel file: {e}")
@@ -70,7 +69,6 @@ if uploaded_file is not None:
         st.subheader("Sample Trend Graph")
         numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
         if numeric_columns:
-            # Plot the first numeric column against the DataFrame index
             fig, ax = plt.subplots()
             ax.plot(df.index, df[numeric_columns[0]], marker='o')
             ax.set_title(f"Trend of {numeric_columns[0]}")
@@ -78,34 +76,67 @@ if uploaded_file is not None:
             ax.set_ylabel(numeric_columns[0])
             st.pyplot(fig)
         else:
-            st.info("No numeric columns found in the uploaded table to plot a trend graph.")
+            st.info("No numeric columns found to plot a trend graph.")
 
-    # --- Ask a Financial Question ---
-    st.subheader("Ask a Question")
-    question = st.text_input("Enter your question about the financial data (e.g., 'What are the key trends in revenue and expenses?')")
-
-    if st.button("Get Analysis"):
-        if question.strip() == "":
-            st.error("Please enter a question.")
+    # === Google Cloud Natural Language API Analysis ===
+    st.subheader("Analyze Document with Google Cloud Natural Language API")
+    if st.button("Analyze Document"):
+        if extracted_text.strip() == "":
+            st.error("No text extracted from the document.")
         else:
-            # Construct a prompt for the AI. You can tweak this prompt to guide the analysis.
-            prompt = (
-                f"You are a financial analyst. Given the following financial data extracted from a document:\n\n"
-                f"{extracted_text}\n\n"
-                f"Answer the following question with a detailed analysis, including any insights or trends you observe:\n"
-                f"{question}\n"
-            )
+            # Define helper functions that call the Google API endpoints
+            def analyze_sentiment(text, api_key):
+                url = f"https://language.googleapis.com/v1/documents:analyzeSentiment?key={api_key}"
+                headers = {"Content-Type": "application/json"}
+                data = {
+                    "document": {
+                        "type": "PLAIN_TEXT",
+                        "content": text
+                    },
+                    "encodingType": "UTF8"
+                }
+                response = requests.post(url, headers=headers, json=data)
+                return response.json()
 
+            def analyze_entities(text, api_key):
+                url = f"https://language.googleapis.com/v1/documents:analyzeEntities?key={api_key}"
+                headers = {"Content-Type": "application/json"}
+                data = {
+                    "document": {
+                        "type": "PLAIN_TEXT",
+                        "content": text
+                    },
+                    "encodingType": "UTF8"
+                }
+                response = requests.post(url, headers=headers, json=data)
+                return response.json()
+
+            with st.spinner("Analyzing document..."):
+                sentiment_result = analyze_sentiment(extracted_text, GOOGLE_API_KEY)
+                entities_result = analyze_entities(extracted_text, GOOGLE_API_KEY)
+
+            # --- Display Sentiment Analysis Results ---
+            st.subheader("Sentiment Analysis")
             try:
-                # Call the OpenAI API (using GPT-3/GPT-4)
-                response = openai.Completion.create(
-                    engine="text-davinci-003",  # or another model if available
-                    prompt=prompt,
-                    max_tokens=500,
-                    temperature=0.5,
-                )
-                answer = response.choices[0].text.strip()
-                st.subheader("AI Analysis")
-                st.write(answer)
+                sentiment = sentiment_result.get("documentSentiment", {})
+                score = sentiment.get("score", "N/A")
+                magnitude = sentiment.get("magnitude", "N/A")
+                st.write(f"**Sentiment Score:** {score}")
+                st.write(f"**Sentiment Magnitude:** {magnitude}")
             except Exception as e:
-                st.error(f"Error communicating with OpenAI API: {e}")
+                st.error("Error parsing sentiment analysis result.")
+
+            # --- Display Entity Analysis Results ---
+            st.subheader("Entity Analysis")
+            try:
+                entities = entities_result.get("entities", [])
+                if entities:
+                    for entity in entities:
+                        name = entity.get("name", "N/A")
+                        entity_type = entity.get("type", "N/A")
+                        salience = entity.get("salience", 0)
+                        st.write(f"**Entity:** {name} | **Type:** {entity_type} | **Salience:** {salience:.2f}")
+                else:
+                    st.write("No entities found.")
+            except Exception as e:
+                st.error("Error parsing entity analysis result.")
